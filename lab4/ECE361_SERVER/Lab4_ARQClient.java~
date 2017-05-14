@@ -1,0 +1,98 @@
+import java.net.*;
+import java.io.*;
+import java.util.*;
+
+class Lab4_ARQClient{
+
+    private static int acknum = 0;
+    
+    public static void main(String[] args) throws UnknownHostException, IOException
+    {
+	System.out.println("Starting ARQ Client.");
+	System.out.println("Attempting to connect to server...");
+	Socket socket = new Socket("localhost",9876);
+	System.out.println("Success!");
+
+	Scanner scan = new Scanner(System.in);
+	System.out.println("Please enter a number of packets to send.");
+	int NoPackets = scan.nextInt();
+
+	DataOutputStream writer = new DataOutputStream(socket.getOutputStream());
+	writer.write(NoPackets);
+
+	//TCP Control Variables
+	int cwnd = 1;
+	int ssthresh = 10;
+	long timeout_period = 1400; //milliseconds
+	long start_timeout;
+	long end_timeout;
+	int expected_acknum;
+	Thread thread = new Thread(new Listener(socket));
+	thread.start();
+
+	while(true)
+	    {
+		int packets_out = 0;
+		start_timeout = System.currentTimeMillis();
+		for (int i = 0; i<cwnd; i++)
+			writer.write(acknum+i); //put out the next packet
+
+		expected_acknum = acknum+cwnd;
+		end_timeout = System.currentTimeMillis();
+		while (end_timeout-start_timeout < timeout_period && acknum < expected_acknum)
+		    { } //wait for reply from server
+		
+		packets_out = 0;
+		//we timed out
+		if (end_timeout-start_timeout >= timeout_period)
+		    {
+			ssthresh = cwnd/2;
+			cwnd = 1;
+		    }
+		else //we good
+		    {
+			if (cwnd < ssthresh)
+			    cwnd = cwnd*2;
+			else
+			    cwnd += 1;
+		    }
+	    }
+	
+    }
+
+    static void setAckNum(int set_val)
+    {
+	if(set_val>acknum)
+	    {
+		System.out.println("Acknowledgement " + set_val + "received. Setting acknum");
+		acknum = set_val;
+	    }
+    }
+
+}
+
+class Listener implements Runnable{
+	public Socket socket;
+	public int curPacket;
+    
+	public Listener(Socket sock){
+	    socket = sock;
+	}
+
+	public void run()
+	{
+	    System.out.println("Listener running");
+	    try{
+		DataInputStream din = new DataInputStream(socket.getInputStream());
+		while(true)
+		    {
+			curPacket = din.readInt();
+		        Lab4_ARQClient.setAckNum(curPacket);
+		    }
+	    }
+	    catch(IOException e){
+		e.printStackTrace();
+	    }
+
+	}
+}
